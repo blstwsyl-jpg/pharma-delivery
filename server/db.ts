@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { captains, InsertOrder, InsertUser, orders, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,63 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function createOrder(order: InsertOrder) {
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.insert(orders).values(order);
+  const result = await db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+  return result[0];
+}
+
+export async function listOrdersForUser(userId: number, role: "user" | "admin" | "captain", scope: "mine" | "available" | "all") {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (role === "admin" || scope === "all") {
+    return db.select().from(orders).orderBy(desc(orders.createdAt));
+  }
+
+  if (role === "captain") {
+    const captain = await db.select().from(captains).where(eq(captains.userId, userId)).limit(1);
+    const captainId = captain[0]?.id;
+    if (!captainId) return [];
+    if (scope === "available") {
+      return db.select().from(orders).where(or(eq(orders.status, "ready"), eq(orders.status, "new"))).orderBy(desc(orders.createdAt));
+    }
+    return db.select().from(orders).where(eq(orders.captainId, captainId)).orderBy(desc(orders.createdAt));
+  }
+
+  return db.select().from(orders).where(eq(orders.customerId, userId)).orderBy(desc(orders.createdAt));
+}
+
+export async function claimOrder(userId: number, orderId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const captain = await db.select().from(captains).where(eq(captains.userId, userId)).limit(1);
+  const captainId = captain[0]?.id;
+  if (!captainId) return undefined;
+  await db.update(orders).set({ captainId, status: "assigned" }).where(eq(orders.id, orderId));
+  const result = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  return result[0];
+}
+
+export async function updateOrderStatus(orderId: string, status: "new" | "preparing" | "ready" | "assigned" | "in_transit" | "delivered" | "cancelled") {
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.update(orders).set({ status }).where(eq(orders.id, orderId));
+  const result = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  return result[0];
+}
+
+export async function setCaptainAvailability(userId: number, availability: "available" | "busy" | "offline") {
+  const db = await getDb();
+  if (!db) return undefined;
+  const current = await db.select().from(captains).where(eq(captains.userId, userId)).limit(1);
+  if (current[0]) {
+    await db.update(captains).set({ availability }).where(eq(captains.userId, userId));
+  } else {
+    await db.insert(captains).values({ userId, availability });
+  }
+  const result = await db.select().from(captains).where(eq(captains.userId, userId)).limit(1);
+  return result[0];
+}
