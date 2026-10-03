@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import type { Product } from "@/data/catalog";
 import { getCartTotal, getOrderTotal } from "@/lib/store-utils";
+import { trpc } from "@/lib/trpc";
 
 export type CartItem = Product & { quantity: number };
 
@@ -24,6 +25,7 @@ type StoreContextValue = {
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   placeOrder: (address: string) => Promise<Order>;
+  isPlacingOrder: boolean;
 };
 
 const CART_KEY = "pharma-delivery-cart";
@@ -34,6 +36,7 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const remoteCreateOrder = trpc.orders.create.useMutation();
   const cartTotal = getCartTotal(cart);
 
   useEffect(() => {
@@ -61,6 +64,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       orders,
       cartCount,
       cartTotal,
+      isPlacingOrder: remoteCreateOrder.isPending,
       addToCart: (product) => {
         setCart((current) => {
           const existing = current.find((item) => item.id === product.id);
@@ -83,9 +87,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCart((current) => current.filter((item) => item.id !== productId));
       },
       placeOrder: async (address) => {
+        const localId = `PH-${Date.now().toString().slice(-6)}`;
+        const remoteOrder = await remoteCreateOrder.mutateAsync({
+          id: localId,
+          customerName: "عميل صيدلي",
+          deliveryAddress: address,
+          total: getOrderTotal(cartTotal).toFixed(2),
+          items: JSON.stringify(cart.map(({ id, name, quantity, price }) => ({ id, name, quantity, price }))),
+        });
         const order: Order = {
-          id: `PH-${Date.now().toString().slice(-6)}`,
-          createdAt: new Date().toISOString(),
+          id: remoteOrder?.id ?? localId,
+          createdAt: remoteOrder?.createdAt ? new Date(remoteOrder.createdAt).toISOString() : new Date().toISOString(),
           items: [...cart],
           total: getOrderTotal(cartTotal),
           address,
@@ -96,7 +108,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return order;
       },
     };
-  }, [cart, orders, cartTotal]);
+  }, [cart, orders, cartTotal, remoteCreateOrder]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

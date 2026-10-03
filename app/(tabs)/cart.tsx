@@ -20,7 +20,7 @@ const formatPrice = (value: number) => `${value.toFixed(2)} ر.س`;
 export default function CartScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { cart, cartTotal, updateQuantity, removeFromCart, placeOrder } = useStore();
+  const { cart, cartTotal, updateQuantity, removeFromCart, placeOrder, isPlacingOrder } = useStore();
   const [address, setAddress] = useState("شارع الزهراء، حي النخيل");
   const [addressError, setAddressError] = useState("");
   const delivery = getDeliveryFee(cartTotal);
@@ -31,10 +31,14 @@ export default function CartScreen() {
       setAddressError("أدخل عنوان التوصيل للمتابعة");
       return;
     }
-    await placeOrder(address.trim());
-    Alert.alert("تم استلام طلبك", "سنرسل لك تحديثاً عند بدء تجهيز الطلب.", [
-      { text: "متابعة الطلب", onPress: () => router.replace("/(tabs)/orders") },
-    ]);
+    try {
+      await placeOrder(address.trim());
+      Alert.alert("تم استلام طلبك", "سنرسل لك تحديثاً عند بدء تجهيز الطلب.", [
+        { text: "متابعة الطلب", onPress: () => router.replace("/(tabs)/orders") },
+      ]);
+    } catch {
+      Alert.alert("تعذر إنشاء الطلب", "سجّل الدخول أولاً وتأكد من اتصال الإنترنت ثم حاول مجدداً.");
+    }
   };
 
   const renderItem: ListRenderItem<CartItem> = ({ item }) => (
@@ -92,7 +96,7 @@ export default function CartScreen() {
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 3 }} />
               <View style={{ flexDirection: "row-reverse", justifyContent: "space-between" }}><Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "900" }}>الإجمالي</Text><Text style={{ color: colors.primary, fontSize: 18, fontWeight: "900" }}>{formatPrice(grandTotal)}</Text></View>
             </View>
-            <Pressable onPress={handleCheckout} style={({ pressed }) => [{ backgroundColor: colors.primary, borderRadius: 17, paddingVertical: 17, marginTop: 22, opacity: pressed ? 0.86 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }]}><Text style={{ color: "#FFFFFF", textAlign: "center", fontSize: 16, fontWeight: "900" }}>تأكيد الطلب · {formatPrice(grandTotal)}</Text></Pressable>
+            <Pressable disabled={isPlacingOrder} onPress={handleCheckout} style={({ pressed }) => [{ backgroundColor: colors.primary, borderRadius: 17, paddingVertical: 17, marginTop: 22, opacity: isPlacingOrder ? 0.55 : pressed ? 0.86 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }]}><Text style={{ color: "#FFFFFF", textAlign: "center", fontSize: 16, fontWeight: "900" }}>{isPlacingOrder ? "جارٍ إرسال الطلب..." : `تأكيد الطلب · ${formatPrice(grandTotal)}`}</Text></Pressable>
             <Text style={{ color: colors.muted, fontSize: 11, textAlign: "center", marginTop: 11 }}>الدفع عند الاستلام متاح حالياً</Text>
           </View>
         ) : null}
