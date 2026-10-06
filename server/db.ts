@@ -1,4 +1,4 @@
-import { desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { captains, InsertOrder, InsertUser, orders, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -129,10 +129,17 @@ export async function claimOrder(userId: number, orderId: string) {
   return result[0];
 }
 
-export async function updateOrderStatus(orderId: string, status: "new" | "preparing" | "ready" | "assigned" | "in_transit" | "delivered" | "cancelled") {
+export async function updateOrderStatus(orderId: string, status: "new" | "preparing" | "ready" | "assigned" | "in_transit" | "delivered" | "cancelled", userId?: number, role?: "user" | "admin" | "captain") {
   const db = await getDb();
   if (!db) return undefined;
-  await db.update(orders).set({ status }).where(eq(orders.id, orderId));
+  if (role === "captain") {
+    const captain = await db.select().from(captains).where(eq(captains.userId, userId ?? 0)).limit(1);
+    const captainId = captain[0]?.id;
+    if (!captainId) return undefined;
+    await db.update(orders).set({ status }).where(and(eq(orders.id, orderId), eq(orders.captainId, captainId)));
+  } else {
+    await db.update(orders).set({ status }).where(eq(orders.id, orderId));
+  }
   const result = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   return result[0];
 }
@@ -147,5 +154,28 @@ export async function setCaptainAvailability(userId: number, availability: "avai
     await db.insert(captains).values({ userId, availability });
   }
   const result = await db.select().from(captains).where(eq(captains.userId, userId)).limit(1);
+  return result[0];
+}
+
+export async function listCaptains() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: captains.id,
+    userId: captains.userId,
+    name: users.name,
+    email: users.email,
+    phone: captains.phone,
+    vehiclePlate: captains.vehiclePlate,
+    availability: captains.availability,
+    rating: captains.rating,
+  }).from(captains).leftJoin(users, eq(captains.userId, users.id));
+}
+
+export async function assignOrder(orderId: string, captainId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.update(orders).set({ captainId, status: "assigned" }).where(eq(orders.id, orderId));
+  const result = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   return result[0];
 }

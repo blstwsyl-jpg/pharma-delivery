@@ -27,6 +27,7 @@ async function syncUser(userInfo: {
     email: userInfo.email ?? null,
     loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
     lastSignedIn,
+    role: userInfo.openId === process.env.OWNER_OPEN_ID ? "admin" : undefined,
   });
   const saved = await getUserByOpenId(userInfo.openId);
   return (
@@ -57,6 +58,7 @@ function buildUserResponse(
     name: user?.name ?? null,
     email: user?.email ?? null,
     loginMethod: user?.loginMethod ?? null,
+    role: (user as any)?.role ?? "user",
     lastSignedIn: (user?.lastSignedIn ?? new Date()).toISOString(),
   };
 }
